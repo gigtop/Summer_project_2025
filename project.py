@@ -18,8 +18,8 @@ class ChartApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Practica")
-        self.geometry("1200x400")  # Подтвержденный размер окна
-        self.resizable(False, False)  # Запрет изменения размеров окна
+        self.geometry("1200x400")
+        self.resizable(False, False)
 
         # Инициализация переменных
         self.device_data = {}  # Словарь для хранения данных устройств (ключ: имя, значение: DataFrame)
@@ -451,7 +451,7 @@ class ChartApp(tk.Tk):
 
     """
     Блок 7: Построение и отображение графиков
-    Этот блок содержит методы для очистки и построения графиков.
+    Этот блок содержит методы для построения графика с учетом усреднений.
     """
     def clear_chart(self):
         self.chart_figure.data = []
@@ -485,7 +485,6 @@ class ChartApp(tk.Tk):
                 messagebox.showerror('Ошибка', 'Некорректный формат даты/времени')
                 return
 
-            # Преобразуем кортежи в pd.Timestamp для сравнений
             start_timestamp = pd.Timestamp(year=start_datetime[0], month=start_datetime[1], day=start_datetime[2],
                                           hour=start_datetime[3], minute=start_datetime[4])
             end_timestamp = pd.Timestamp(year=end_datetime[0], month=end_datetime[1], day=end_datetime[2],
@@ -513,7 +512,6 @@ class ChartApp(tk.Tk):
         self.clear_chart()
 
         if self.effective_temp_mode.get():
-            # Режим "ЭТ + Теплоощущение"
             temp_column, humidity_column = self.temp_selector.get(), self.humidity_selector.get()
             if not temp_column or not humidity_column:
                 messagebox.showwarning('Ошибка', 'Выберите Температуру и Влажность')
@@ -541,18 +539,15 @@ class ChartApp(tk.Tk):
             chart_type = self.chart_style.get()
 
             if chart_type == 'pie':
-                # Круговая диаграмма для распределения категорий теплоощущения
                 sensation_counts = valid_sensation.value_counts()
                 labels = sensation_counts.index.tolist()
                 values = sensation_counts.values.tolist()
                 colors = [self.sensation_colors.get(cat, '#000000') for cat in labels]
 
-                # Создание окна для графика
                 self.chart_display = tk.Toplevel(self)
                 self.chart_display.title("Круговая диаграмма теплоощущения")
                 self.chart_display.geometry("800x600")
 
-                # Построение круговой диаграммы
                 mpl_fig = plt.figure(figsize=(8, 6))
                 plt.pie(values, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors)
                 plt.axis('equal')
@@ -563,7 +558,6 @@ class ChartApp(tk.Tk):
                 self.chart_canvas.get_tk_widget().pack(fill='both', expand=True)
 
             else:
-                # Линейный или столбчатый график
                 segment_groups = []
                 current_segment = []
                 previous_category = None
@@ -659,12 +653,10 @@ class ChartApp(tk.Tk):
                     )
                 )
 
-                # Создание окна для графика
                 self.chart_display = tk.Toplevel(self)
                 self.chart_display.title("График теплоощущения")
                 self.chart_display.geometry("800x600")
 
-                # Конвертация Plotly в matplotlib
                 mpl_fig = plt.figure(figsize=(8, 6))
                 for trace in self.chart_figure.data:
                     if trace['type'] == 'scatter':
@@ -684,7 +676,6 @@ class ChartApp(tk.Tk):
                 self.chart_canvas.get_tk_widget().pack(fill='both', expand=True)
 
         else:
-            # Обычный режим (без "ЭТ + Теплоощущение")
             if not y_parameters and self.chart_style.get() != 'pie':
                 messagebox.showwarning('Нет полей', 'Выберите поля для оси Y')
                 return
@@ -694,22 +685,18 @@ class ChartApp(tk.Tk):
                     messagebox.showwarning('Нет полей', 'Выберите поля для оси Y для круговой диаграммы')
                     return
 
-                # Создание окна для графика
                 self.chart_display = tk.Toplevel(self)
                 self.chart_display.title("Круговая диаграмма")
                 self.chart_display.geometry("800x600")
 
-                # Подготовка данных для круговой диаграммы (средние значения)
                 mean_values = [y_data[param].mean() for param in y_parameters]
                 labels = [f'{param} ({y_device})' for param in y_parameters]
 
-                # Исключение отрицательных значений и NaN
                 if any(val < 0 or pd.isna(val) for val in mean_values):
                     messagebox.showerror('Ошибка', 'Круговая диаграмма не поддерживает отрицательные значения или NaN')
                     self.chart_display.destroy()
                     return
 
-                # Создание круговой диаграммы
                 mpl_fig = plt.figure(figsize=(8, 6))
                 plt.pie(mean_values, labels=labels, autopct='%1.1f%%', startangle=90, colors=plt.cm.Paired.colors)
                 plt.axis('equal')
@@ -720,8 +707,13 @@ class ChartApp(tk.Tk):
                 self.chart_canvas.get_tk_widget().pack(fill='both', expand=True)
 
             else:
-                # Линейный или столбчатый график
                 x_values = x_data[x_parameter] if x_parameter != 'Date' else x_data.index
+                # Print original (non-resampled) data
+                for column in y_parameters:
+                    print(f"\nOriginal Data for {column} ({y_device}):")
+                    for x_val, y_val in zip(x_values, y_data[column]):
+                        if pd.notna(y_val):  # Only print non-NaN values
+                            print(f"x ({x_parameter}): {x_val}, y ({column}): {y_val}")
                 for column in y_parameters:
                     trace_label = f'{column} ({y_device})'
                     if self.chart_style.get() == 'line':
@@ -744,53 +736,75 @@ class ChartApp(tk.Tk):
                 if any([self.avg_one_hour.get(), self.avg_three_hours.get(), self.avg_one_day.get(), self.min_max_daily.get()]):
                     resampled_data = y_data[y_parameters].copy()
                     if self.avg_one_hour.get():
-                        resampled_one_hour = resampled_data.resample('1H').mean()
+                        resampled_one_hour = resampled_data.resample('1h').mean()
                         for column in y_parameters:
                             self.chart_figure.add_trace(go.Scatter(
                                 x=resampled_one_hour.index,
                                 y=resampled_one_hour[column],
                                 mode='lines',
-                                line=dict(dash='dash', width=1.5),
+                                line=dict(dash='dash', width=1.5, shape='hv'),
                                 name=f'{column} 1ч ({y_device})'
                             ))
                     if self.avg_three_hours.get():
-                        resampled_three_hours = resampled_data.resample('3H').mean()
+                        resampled_three_hours = resampled_data.resample('3h').mean()
                         for column in y_parameters:
+                            print(f"\n3-Hour Resampled Data for {column} ({y_device}):")
+                            for timestamp, value in zip(resampled_three_hours.index, resampled_three_hours[column]):
+                                if pd.notna(value):  # Only print non-NaN values
+                                    print(f"x (Timestamp): {timestamp}, y ({column}): {value}")
                             self.chart_figure.add_trace(go.Scatter(
                                 x=resampled_three_hours.index,
                                 y=resampled_three_hours[column],
                                 mode='lines',
-                                line=dict(dash='dot', width=1.5),
+                                line=dict(dash='dot', width=1.5, shape='hv'),
                                 name=f'{column} 3ч ({y_device})'
                             ))
                     if self.avg_one_day.get():
                         resampled_one_day = resampled_data.resample('D').mean()
                         for column in y_parameters:
-                            self.chart_figure.add_trace(go.Scatter(
-                                x=resampled_one_day.index,
-                                y=resampled_one_day[column],
-                                mode='lines',
-                                line=dict(dash='dashdot', width=1.5),
-                                name=f'{column} 1д ({y_device})'
-                            ))
+                            print(f"\n1-Day Resampled Data for {column} ({y_device}):")
+                            for timestamp, value in zip(resampled_one_day.index, resampled_one_day[column]):
+                                if pd.notna(value):  # Only print non-NaN values
+                                    print(f"x (Timestamp): {timestamp}, y ({column}): {value}")
+                            if not resampled_one_day[column].dropna().empty:
+                                self.chart_figure.add_trace(go.Scatter(
+                                    x=resampled_one_day.index,
+                                    y=resampled_one_day[column],
+                                    mode='lines',
+                                    line=dict(dash='dashdot', width=1.5, shape='hv'),
+                                    name=f'{column} 1д ({y_device})'
+                                ))
+                            else:
+                                print(f"Warning: No valid 1-day resampled data for {column}")
+
                     if self.min_max_daily.get():
                         daily_min = resampled_data.resample('D').min()
                         daily_max = resampled_data.resample('D').max()
                         for col in y_parameters:
-                            self.chart_figure.add_trace(go.Scatter(
-                                x=daily_min.index,
-                                y=daily_min[col],
-                                mode='lines',
-                                line=dict(width=1, color='blue'),
-                                name=f'{col} min 1д ({y_device})'
-                            ))
-                            self.chart_figure.add_trace(go.Scatter(
-                                x=daily_max.index,
-                                y=daily_max[col],
-                                mode='lines',
-                                line=dict(width=1, color='red'),
-                                name=f'{col} max 1д ({y_device})'
-                            ))
+                            print(f"\nDaily Min/Max Data for {col} ({y_device}):")
+                            for timestamp, min_val, max_val in zip(daily_min.index, daily_min[col], daily_max[col]):
+                                if pd.notna(min_val) or pd.notna(max_val):
+                                    print(f"x (Timestamp): {timestamp}, Min ({col}): {min_val}, Max ({col}): {max_val}")
+                            if not daily_min[col].dropna().empty:
+                                self.chart_figure.add_trace(go.Scatter(
+                                    x=daily_min.index,
+                                    y=daily_min[col],
+                                    mode='lines',
+                                    line=dict(dash='dash', width=1, color='blue'),
+                                    name=f'{col} min 1д ({y_device})'
+                                ))
+                            else:
+                                print(f"Warning: No valid daily min data for {col}")
+                            if not daily_max[col].dropna().empty:
+                                self.chart_figure.add_trace(go.Scatter(
+                                    x=daily_max.index,
+                                    y=daily_max[col],
+                                    mode='lines',
+                                    line=dict(dash='solid', width=1, color='red'),
+                                    name=f'{col} max 1д ({y_device})'
+                                ))
+                            else:
+                                print(f"Warning: No valid daily max data for {col}")
 
                 self.chart_figure.update_layout(
                     yaxis_title='Значение',
@@ -836,17 +850,19 @@ class ChartApp(tk.Tk):
                     )
                 )
 
-                # Создание окна для графика
                 self.chart_display = tk.Toplevel(self)
                 self.chart_display.title("График")
                 self.chart_display.geometry("800x600")
 
-                # Конвертация Plotly в matplotlib
                 mpl_fig = plt.figure(figsize=(8, 6))
                 for trace in self.chart_figure.data:
                     if trace['type'] == 'scatter':
                         line_color = trace['line']['color'] if 'line' in trace and 'color' in trace['line'] else None
-                        mpl_fig.gca().plot(trace['x'], trace['y'], label=trace['name'], color=line_color)
+                        # Handle stepped line for all averaged traces (1ч, 3ч, 1д) in matplotlib
+                        if '1ч' in trace['name'] or '3ч' in trace['name'] or '1д' in trace['name']:
+                            mpl_fig.gca().step(trace['x'], trace['y'], label=trace['name'], color=line_color, where='post')
+                        else:
+                            mpl_fig.gca().plot(trace['x'], trace['y'], label=trace['name'], color=line_color)
                     elif trace['type'] == 'bar':
                         mpl_fig.gca().bar(trace['x'], trace['y'], label=trace['name'])
 
