@@ -668,7 +668,7 @@ class ChartApp(tk.Tk):
                 mpl_fig.gca().set_xlabel('Дата')
                 mpl_fig.gca().set_ylabel('Эф. температура (°C)')
                 mpl_fig.gca().set_title(f'ЭТ и Теплоощущение\nПрибор: {y_device}')
-                mpl_fig.gca().legend()
+                #mpl_fig.gca().legend()
                 mpl_fig.gca().grid(True)
 
                 self.chart_canvas = FigureCanvasTkAgg(mpl_fig, master=self.chart_display)
@@ -735,6 +735,18 @@ class ChartApp(tk.Tk):
 
                 if any([self.avg_one_hour.get(), self.avg_three_hours.get(), self.avg_one_day.get(), self.min_max_daily.get()]):
                     resampled_data = y_data[y_parameters].copy()
+                    if not resampled_data.empty:
+                        last_row = resampled_data.iloc[-1].copy()  # Копия последней строки
+                        last_timestamp = resampled_data.index[-1]
+                        # Определяем минимальный интервал времени в данных (или используем 1 минуту по умолчанию)
+                        if len(resampled_data) > 1:
+                            time_diff = resampled_data.index[1:] - resampled_data.index[:-1]
+                            min_interval = min(time_diff).total_seconds() / 60  # Интервал в минутах
+                            new_timestamp = last_timestamp + pd.Timedelta(minutes=min_interval)
+                        else:
+                            new_timestamp = last_timestamp + pd.Timedelta(minutes=1)  # По умолчанию 1 минута
+                        last_row.name = new_timestamp  # Устанавливаем новую метку времени
+                        resampled_data = pd.concat([resampled_data, last_row.to_frame().T])  # Добавляем строку
                     if self.avg_one_hour.get():
                         resampled_one_hour = resampled_data.resample('1h').mean()
                         for column in y_parameters:
