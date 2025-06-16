@@ -21,32 +21,27 @@ class ChartApp(tk.Tk):
         self.geometry("1200x400")
         self.resizable(False, False)
 
-        # Инициализация переменных
-        self.device_data = {}  # Словарь для хранения данных устройств (ключ: имя, значение: DataFrame)
-        self.filter_by_date = tk.BooleanVar(value=False)  # Флаг для фильтра по дате
-        self.effective_temp_mode = tk.BooleanVar(value=False)  # Флаг для расчета эффективной температуры
-        self.avg_one_hour = tk.BooleanVar(value=False)  # Флаг для усреднения за 1 час
-        self.avg_three_hours = tk.BooleanVar(value=False)  # Флаг для усреднения за 3 часа
-        self.avg_one_day = tk.BooleanVar(value=False)  # Флаг для усреднения за 1 день
-        self.min_max_daily = tk.BooleanVar(value=False)  # Флаг для мин/макс за день
-        self.chart_style = tk.StringVar(value='line')  # Тип графика
+        self.device_data = {}
+        self.filter_by_date = tk.BooleanVar(value=False)
+        self.effective_temp_mode = tk.BooleanVar(value=False)
+        self.avg_one_hour = tk.BooleanVar(value=False)
+        self.avg_three_hours = tk.BooleanVar(value=False)
+        self.avg_one_day = tk.BooleanVar(value=False)
+        self.min_max_daily = tk.BooleanVar(value=False)
+        self.chart_style = tk.StringVar(value='line')
 
-        # Категории теплоощущения и их цвета для графика эффективной температуры
-        self.sensation_categories = ['Крайне холодно', 'Очень холодно', 'Холодно', 'Умеренно холодно',
-                                    'Прохладно', 'Умеренно тепло', 'Тепло', 'Жарко', 'Очень жарко']
         self.sensation_colors = {
             'Крайне холодно': '#000080', 'Очень холодно': '#0000FF', 'Холодно': '#87CEFA',
             'Умеренно холодно': '#ADD8E6', 'Прохладно': '#008000', 'Умеренно тепло': '#9ACD32',
             'Тепло': '#FFD700', 'Жарко': '#FF8C00', 'Очень жарко': '#FF0000'
         }
 
-        # Переменные для хранения временных границ и виджетов
+
         self.min_datetime = None  # Минимальная дата из данных (pd.Timestamp)
         self.max_datetime = None  # Максимальная дата из данных (pd.Timestamp)
         self.x_axis_list = None  # Список для выбора параметра оси X
         self.y_axis_list = None  # Список для выбора параметров оси Y
-        self.x_device_selector = None  # Выпадающий список для устройства X
-        self.y_device_selector = None  # Выпадающий список для устройства Y
+        self.device_selector = None  # Выпадающий список для устройства
         self.start_datetime_selector = None  # Выпадающий список для начальной даты
         self.end_datetime_selector = None  # Выпадающий список для конечной даты
         self.start_hour_entry = None  # Поле для часов начала
@@ -65,17 +60,16 @@ class ChartApp(tk.Tk):
 
     """
     Блок 2: Инициализация пользовательского интерфейса
-    Этот блок создает и размещает все виджеты интерфейса, включая кнопки, списки,
-    выпадающие меню и рамки.
+    Этот блок создает и размещает все виджеты интерфейса.
     """
     def _initialize_widgets(self):
         # Настройка стиля с использованием ttkbootstrap
         style = ttk.Style(theme='litera')  # Тема с округлым стилем
-        style.configure('TButton', font=('Arial', 10), padding=8, borderadius=15)  # Увеличенное закругление
+        style.configure('TButton', font=('Arial', 10), padding=8, borderadius=15)
         style.configure('TLabel', font=('Arial', 10))
         style.configure('TCheckbutton', font=('Arial', 10))
         style.configure('TRadiobutton', font=('Arial', 10))
-        style.configure('TLabelframe', font=('Arial', 11, 'bold'), borderadius=10)  # Закругление для LabelFrame
+        style.configure('TLabelframe', font=('Arial', 11, 'bold'), borderadius=10)
         style.configure('TLabelframe.Label', font=('Arial', 11, 'bold'))
 
         # Главный контейнер с двухколоночной структурой
@@ -113,14 +107,10 @@ class ChartApp(tk.Tk):
         device_select_frame.columnconfigure(3, weight=1)
 
         ttk.Label(device_select_frame, text='Устройство X:').grid(row=0, column=0, padx=5, sticky='e')
-        self.x_device_selector = ttk.Combobox(device_select_frame, state='readonly', font=('Arial', 10), bootstyle='primary')
-        self.x_device_selector.grid(row=0, column=1, padx=5, sticky='ew')
-        self.x_device_selector.bind('<<ComboboxSelected>>', self._handle_x_device_selection)
-
-        ttk.Label(device_select_frame, text='Устройство Y:').grid(row=0, column=2, padx=5, sticky='e')
-        self.y_device_selector = ttk.Combobox(device_select_frame, state='readonly', font=('Arial', 10), bootstyle='primary')
-        self.y_device_selector.grid(row=0, column=3, padx=5, sticky='ew')
-        self.y_device_selector.bind('<<ComboboxSelected>>', self._handle_y_device_selection)
+        self.device_selector = ttk.Combobox(device_select_frame, state='readonly', font=('Arial', 10), bootstyle='primary')
+        self.device_selector.grid(row=0, column=1, padx=5, sticky='ew')
+        self.device_selector.bind('<<ComboboxSelected>>', self._handle_x_device_selection)
+        self.device_selector.bind('<<ComboboxSelected>>', self._handle_y_device_selection)
 
         # Секция выбора параметров осей (в левой колонке)
         axis_params_frame = ttk.LabelFrame(left_frame, text='Параметры осей', padding=10, bootstyle='primary')
@@ -367,16 +357,16 @@ class ChartApp(tk.Tk):
     """
     def _update_device_lists(self):
         device_names = list(self.device_data.keys())
-        self.x_device_selector['values'] = device_names
-        self.y_device_selector['values'] = device_names
+        self.device_selector['values'] = device_names
+        self.device_selector['values'] = device_names
         if device_names:
-            self.x_device_selector.set(device_names[0])
-            self.y_device_selector.set(device_names[0])
+            self.device_selector.set(device_names[0])
+            self.device_selector.set(device_names[0])
             self._handle_x_device_selection(None)
             self._handle_y_device_selection(None)
 
     def _handle_x_device_selection(self, event):
-        selected_device = self.x_device_selector.get()
+        selected_device = self.device_selector.get()
         if selected_device in self.device_data:
             dataframe = self.device_data[selected_device]
             self.x_axis_list.delete(0, 'end')
@@ -407,9 +397,9 @@ class ChartApp(tk.Tk):
                 self.end_minute_entry.insert(0, self.max_datetime.strftime("%M"))
 
     def _handle_y_device_selection(self, event):
-        selected_y_device = self.y_device_selector.get()
+        selected_y_device = self.device_selector.get()
         if selected_y_device in self.device_data:
-            self.x_device_selector.set(selected_y_device)
+            self.device_selector.set(selected_y_device)
             self._handle_x_device_selection(None)
 
             dataframe = self.device_data[selected_y_device]
@@ -462,8 +452,8 @@ class ChartApp(tk.Tk):
             self.chart_canvas = None
 
     def render_chart(self):
-        x_device = self.x_device_selector.get()
-        y_device = self.y_device_selector.get()
+        x_device = self.device_selector.get()
+        y_device = self.device_selector.get()
         if not x_device or x_device not in self.device_data or not y_device or y_device not in self.device_data:
             messagebox.showwarning('Нет устройства', 'Выберите устройства для X и Y')
             return
@@ -668,7 +658,6 @@ class ChartApp(tk.Tk):
                 mpl_fig.gca().set_xlabel('Дата')
                 mpl_fig.gca().set_ylabel('Эф. температура (°C)')
                 mpl_fig.gca().set_title(f'ЭТ и Теплоощущение\nПрибор: {y_device}')
-                mpl_fig.gca().legend()
                 mpl_fig.gca().grid(True)
 
                 self.chart_canvas = FigureCanvasTkAgg(mpl_fig, master=self.chart_display)
@@ -708,12 +697,6 @@ class ChartApp(tk.Tk):
 
             else:
                 x_values = x_data[x_parameter] if x_parameter != 'Date' else x_data.index
-                # Print original (non-resampled) data
-                for column in y_parameters:
-                    print(f"\nOriginal Data for {column} ({y_device}):")
-                    for x_val, y_val in zip(x_values, y_data[column]):
-                        if pd.notna(y_val):  # Only print non-NaN values
-                            print(f"x ({x_parameter}): {x_val}, y ({column}): {y_val}")
                 for column in y_parameters:
                     trace_label = f'{column} ({y_device})'
                     if self.chart_style.get() == 'line':
@@ -735,6 +718,19 @@ class ChartApp(tk.Tk):
 
                 if any([self.avg_one_hour.get(), self.avg_three_hours.get(), self.avg_one_day.get(), self.min_max_daily.get()]):
                     resampled_data = y_data[y_parameters].copy()
+                    if not resampled_data.empty:
+                        last_row = resampled_data.iloc[-1].copy()
+                        last_timestamp = resampled_data.index[-1]
+
+                        if len(resampled_data) > 1:
+                            time_diff = resampled_data.index[1:] - resampled_data.index[:-1]
+                            min_interval = min(time_diff).total_seconds() / 60  # Интервал в минутах
+                            new_timestamp = last_timestamp + pd.Timedelta(minutes=min_interval)
+                        else:
+                            new_timestamp = last_timestamp + pd.Timedelta(minutes=1)
+                        last_row.name = new_timestamp
+                        resampled_data = pd.concat([resampled_data, last_row.to_frame().T])
+
                     if self.avg_one_hour.get():
                         resampled_one_hour = resampled_data.resample('1h').mean()
                         for column in y_parameters:
@@ -748,10 +744,6 @@ class ChartApp(tk.Tk):
                     if self.avg_three_hours.get():
                         resampled_three_hours = resampled_data.resample('3h').mean()
                         for column in y_parameters:
-                            print(f"\n3-Hour Resampled Data for {column} ({y_device}):")
-                            for timestamp, value in zip(resampled_three_hours.index, resampled_three_hours[column]):
-                                if pd.notna(value):  # Only print non-NaN values
-                                    print(f"x (Timestamp): {timestamp}, y ({column}): {value}")
                             self.chart_figure.add_trace(go.Scatter(
                                 x=resampled_three_hours.index,
                                 y=resampled_three_hours[column],
@@ -762,10 +754,6 @@ class ChartApp(tk.Tk):
                     if self.avg_one_day.get():
                         resampled_one_day = resampled_data.resample('D').mean()
                         for column in y_parameters:
-                            print(f"\n1-Day Resampled Data for {column} ({y_device}):")
-                            for timestamp, value in zip(resampled_one_day.index, resampled_one_day[column]):
-                                if pd.notna(value):  # Only print non-NaN values
-                                    print(f"x (Timestamp): {timestamp}, y ({column}): {value}")
                             if not resampled_one_day[column].dropna().empty:
                                 self.chart_figure.add_trace(go.Scatter(
                                     x=resampled_one_day.index,
@@ -781,10 +769,6 @@ class ChartApp(tk.Tk):
                         daily_min = resampled_data.resample('D').min()
                         daily_max = resampled_data.resample('D').max()
                         for col in y_parameters:
-                            print(f"\nDaily Min/Max Data for {col} ({y_device}):")
-                            for timestamp, min_val, max_val in zip(daily_min.index, daily_min[col], daily_max[col]):
-                                if pd.notna(min_val) or pd.notna(max_val):
-                                    print(f"x (Timestamp): {timestamp}, Min ({col}): {min_val}, Max ({col}): {max_val}")
                             if not daily_min[col].dropna().empty:
                                 self.chart_figure.add_trace(go.Scatter(
                                     x=daily_min.index,
