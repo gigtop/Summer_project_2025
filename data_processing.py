@@ -1,0 +1,416 @@
+import tkinter as tk
+import pandas as pd
+import json
+import time
+import threading
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from tkinter import messagebox, filedialog
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+
+class DataProcessor:
+    def __init__(self, master):
+        self.master = master
+        self.master.chart_figure = go.Figure()
+        self.loading_progress = 0
+        self.loading_thread = None
+        self.is_loading = False
+
+    def _parse_datetime(self, date_combobox, hour_entry, minute_entry):
+        try:
+            date_str = date_combobox.get()
+            date_struct = time.strptime(date_str, "%d-%m")
+            hour = int(hour_entry.get()) if hour_entry.get() else 0
+            minute = int(minute_entry.get()) if minute_entry.get() else 0
+            return (date_struct.tm_mday, hour, minute)
+        except Exception:
+            return None
+
+    def _begin_json_load(self):
+        self.master.gui.load_json_button.config(state='disabled')
+        self.master.gui.loading_bar.grid()
+        self.master.gui.loading_bar['value'] = 0
+        self.is_loading = True
+        threading.Thread(target=self._process_json_load1, daemon=True).start()
+    def _process_json_load1(self):
+        file_path = filedialog.askopenfilename(filetypes=[('JSON', '*.json;*.txt')])
+        if not file_path:
+            self.master.after(0, self._complete_load)
+            return
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                json_data = json.load(file)
+            temp_device_data = {}
+            #TODO: Long loading
+            for num,value in enumerate(json_data.values()):
+                value_num = num/len(json_data.values())
+                self._update_progress_bar(value_num)
+
+                if 'uName' not in value or 'serial' not in value or 'Date' not in value or 'data' not in value:
+                    continue
+                device_name = f"{value['uName']} ({value['serial']})"
+                if device_name not in temp_device_data:
+                    temp_device_data[device_name] = []
+                record = {'Date': pd.to_datetime(value['Date'])}
+                record.update(value['data'])
+                temp_device_data[device_name].append(record)
+            self.master.device_data = {
+                name: pd.DataFrame(records).set_index('Date').apply(pd.to_numeric, errors='coerce').dropna(how='all')
+                for name, records in temp_device_data.items()}
+            if not self.master.device_data:
+                raise ValueError("Нет данных для устройств")
+            self.master.after(0, self._update_device_lists)
+            self.master.after(0, lambda: messagebox.showinfo("Успех", f"JSON загружен: {file_path}"))
+        except Exception as e:
+            self.master.after(0, lambda: messagebox.showerror('Ошибка', str(e)))
+        finally:
+            self.is_loading = False
+            self.master.after(0, self._complete_load)
+
+    def _update_progress_bar(self, progress):
+        if self.is_loading:
+            print(progress)
+            self.loading_progress = progress*100
+            self.master.gui.loading_bar['value'] = self.loading_progress
+
+
+    def _complete_load(self):
+        self.master.gui.loading_bar.grid_remove()
+        self.master.gui.load_json_button.config(state='normal')
+        self.master.gui.loading_bar['value'] = 0
+        self.loading_progress = 0
+        self.is_loading = False
+
+    def _update_device_lists(self):
+        device_names = list(self.master.device_data.keys())
+        self.master.gui.device_selector['values'] = device_names
+        if device_names:
+            self.master.gui.device_selector.set(device_names[0])
+            self._handle_x_device_selection(None)
+            self._handle_y_device_selection(None)
+
+    def _handle_x_device_selection(self, event):
+        # TODO: see
+        selected_device = self.master.gui.device_selector.get()
+        if selected_device in self.master.device_data:
+            dataframe = self.master.device_data[selected_device]
+            self.master.gui.x_axis_list.delete(0, 'end')
+            self.master.gui.x_axis_list.insert('end', 'Date')
+            for column in dataframe.columns:
+                self.master.gui.x_axis_list.insert('end', column)
+            self.master.gui.x_axis_list.selection_clear(0, 'end')
+            self.master.gui.x_axis_list.selection_set(0)
+            self.master.min_datetime = dataframe.index.min()
+            self.master.max_datetime = dataframe.index.max()
+            if self.master.min_datetime and self.master.max_datetime:
+                date_range = pd.date_range(start=self.master.min_datetime, end=self.master.max_datetime, freq='D')
+                date_strs = [dt.strftime("%d-%m") for dt in date_range]
+                self.master.gui.start_datetime_selector['values'] = date_strs
+                self.master.gui.end_datetime_selector['values'] = date_strs
+                self.master.gui.start_datetime_selector.set(self.master.min_datetime.strftime("%d-%m"))
+                self.master.gui.end_datetime_selector.set(self.master.max_datetime.strftime("%d-%m"))
+                self.master.gui.start_hour_entry.delete(0, 'end')
+                self.master.gui.start_hour_entry.insert(0, self.master.min_datetime.strftime("%H"))
+                self.master.gui.start_minute_entry.delete(0, 'end')
+                self.master.gui.start_minute_entry.insert(0, self.master.min_datetime.strftime("%M"))
+                self.master.gui.end_hour_entry.delete(0, 'end')
+                self.master.gui.end_hour_entry.insert(0, self.master.max_datetime.strftime("%H"))
+                self.master.gui.end_minute_entry.delete(0, 'end')
+                self.master.gui.end_minute_entry.insert(0, self.master.max_datetime.strftime("%M"))
+
+    def _handle_y_device_selection(self):
+        # TODO: see
+        selected_y_device = self.master.gui.device_selector.get()
+        if selected_y_device in self.master.device_data:
+            self.master.gui.device_selector.set(selected_y_device)
+            self._handle_x_device_selection(None)
+            dataframe = self.master.device_data[selected_y_device]
+            numeric_columns = [col for col in dataframe.columns if pd.api.types.is_numeric_dtype(dataframe[col])]
+            self.master.gui.y_axis_list.delete(0, 'end')
+            for col in numeric_columns:
+                self.master.gui.y_axis_list.insert('end', col)
+            temp_priority = ['weather_temp', 'BME280_temp', 'temperature']
+            humidity_priority = ['weather_humidity', 'BME280_humidity', 'humidity']
+            temp_candidates = [col for col in temp_priority if col in numeric_columns] + [col for col in numeric_columns
+                                                                                          if col not in temp_priority]
+            humidity_candidates = [col for col in humidity_priority if col in numeric_columns] + [col for col in
+                                                                                                  numeric_columns if
+                                                                                                  col not in humidity_priority]
+            self.master.gui.temp_selector['values'] = temp_candidates
+            self.master.gui.humidity_selector['values'] = humidity_candidates
+            default_temp = next((col for col in temp_priority if col in numeric_columns),
+                                temp_candidates[0] if temp_candidates else None)
+            if default_temp:
+                self.master.gui.temp_selector.set(default_temp)
+            default_humidity = next((col for col in humidity_priority if col in numeric_columns),
+                                    humidity_candidates[0] if humidity_candidates else None)
+            if default_humidity:
+                self.master.gui.humidity_selector.set(default_humidity)
+
+    def clear_chart(self):
+        self.master.chart_figure.data = []
+        self.master.chart_figure.layout = go.Layout()
+        if self.master.chart_display:
+            self.master.chart_display.destroy()
+            self.master.chart_display = None
+        if self.master.chart_canvas:
+            self.master.chart_canvas.get_tk_widget().destroy()
+            self.master.chart_canvas = None
+        if self.master.matplotlib_figure:
+            plt.close(self.master.matplotlib_figure)
+            self.master.matplotlib_figure = None
+
+
+    def _classify_sensation(self, effective_temp):
+        if pd.isna(effective_temp):
+            return None
+        thresholds = [(30, 'Очень жарко'), (24, 'Жарко'), (18, 'Тепло'), (12, 'Умеренно тепло'),
+                      (6, 'Прохладно'), (0, 'Умеренно холодно'), (-12, 'Холодно'), (-24, 'Очень холодно')]
+        for threshold, sensation in thresholds:
+            if effective_temp >= threshold:
+                return sensation
+        return 'Крайне холодно'
+
+    def render_chart(self):
+        # TODO: many times see it
+        x_device = y_device = self.master.gui.device_selector.get()
+        if not x_device or x_device not in self.master.device_data:
+            messagebox.showwarning('Нет устройства', 'Выберите устройства.')
+            return
+        x_data = self.master.device_data[x_device].copy()
+        y_data = self.master.device_data[y_device].copy()
+        x_selection = self.master.gui.x_axis_list.curselection()
+        if not x_selection:
+            messagebox.showwarning('Нет полей', 'Выберите поле для оси X')
+            return
+        x_parameter = self.master.gui.x_axis_list.get(x_selection[0])
+        if self.master.filter_by_date.get():
+            start_datetime = self._parse_datetime(self.master.gui.start_datetime_selector,
+                                                  self.master.gui.start_hour_entry, self.master.gui.start_minute_entry)
+            end_datetime = self._parse_datetime(self.master.gui.end_datetime_selector, self.master.gui.end_hour_entry,
+                                                self.master.gui.end_minute_entry)
+            if not start_datetime or not end_datetime:
+                messagebox.showerror('Ошибка', 'Некорректный формат даты/времени')
+                return
+            start_timestamp = pd.Timestamp(year=start_datetime[0], month=start_datetime[1], day=start_datetime[2],
+                                           hour=start_datetime[3], minute=start_datetime[4])
+            end_timestamp = pd.Timestamp(year=end_datetime[0], month=end_datetime[1], day=end_datetime[2],
+                                         hour=end_datetime[3], minute=end_datetime[4])
+            if start_timestamp < self.master.min_datetime:
+                start_timestamp = self.master.min_datetime
+            if end_timestamp > self.master.max_datetime:
+                end_timestamp = self.master.max_datetime
+            if start_timestamp > end_timestamp:
+                messagebox.showerror('Ошибка', 'Неверный временной диапазон')
+                return
+            x_data = x_data[(x_data.index >= start_timestamp) & (x_data.index <= end_timestamp)]
+            y_data = y_data[(y_data.index >= start_timestamp) & (y_data.index <= end_timestamp)]
+            common_index = x_data.index.intersection(y_data.index)
+            x_data = x_data.loc[common_index]
+            y_data = y_data.loc[common_index]
+        y_parameters = [self.master.gui.y_axis_list.get(i) for i in
+                        self.master.gui.y_axis_list.curselection()] if self.master.gui.y_axis_list.curselection() else []
+        self.clear_chart()
+        if self.master.effective_temp_mode.get():
+            temp_column, humidity_column = self.master.gui.temp_selector.get(), self.master.gui.humidity_selector.get()
+            if not temp_column or not humidity_column:
+                messagebox.showwarning('Ошибка', 'Выберите Температуру и Влажность')
+                return
+            if temp_column not in y_data.columns or humidity_column not in y_data.columns:
+                messagebox.showerror('Ошибка', 'Выбранные параметры температуры или влажности отсутствуют в данных')
+                return
+            temperature = y_data[temp_column]
+            humidity = y_data[humidity_column]
+            effective_temp = temperature - 0.4 * (temperature - 10) * (1 - humidity / 100)
+            if effective_temp.isna().all():
+                messagebox.showerror('Ошибка',
+                                     'Невозможно вычислить эффективную температуру: данные содержат только NaN')
+                return
+            sensation = effective_temp.apply(self._classify_sensation)
+            valid_data = effective_temp.dropna()
+            valid_sensation = sensation[effective_temp.notna()]
+            if valid_data.empty:
+                messagebox.showerror('Ошибка', 'Нет валидных данных для построения графика теплоощущения')
+                return
+            print("start")
+            chart_type = self.master.chart_style.get()
+            self.master.chart_display = tk.Toplevel(self.master)
+            self.master.chart_display.protocol("WM_DELETE_WINDOW", self.clear_chart())
+            self.master.chart_display.geometry("800x600")
+            self.master.matplotlib_figure = plt.figure(figsize=(8, 6))
+            if chart_type == 'scatter':
+                self.master.chart_display.title("Точечная диаграмма теплоощущения")
+                for sensation_type in valid_sensation.unique():
+                    mask = valid_sensation == sensation_type
+                    plt.scatter(valid_data.index[mask], valid_data[mask], label=sensation_type,
+                                color=self.master.sensation_colors.get(sensation_type, '#000000'), s=20)
+                plt.xlabel('Дата')
+                plt.ylabel('Эф. температура (°C)')
+                plt.title(f'ЭТ и Теплоощущение\nПрибор: {y_device}')
+                plt.grid(True)
+                plt.legend()
+            else:
+                self.master.chart_display.title("График теплоощущения")
+                segment_groups = []
+                current_segment = []
+                previous_category = None
+                for timestamp, value, category in zip(valid_data.index, valid_data, valid_sensation):
+                    if category != previous_category and previous_category is not None:
+                        if current_segment:
+                            segment_groups.append((previous_category, current_segment))
+                        current_segment = [(timestamp, value)]
+                    else:
+                        current_segment.append((timestamp, value))
+                    previous_category = category
+                if current_segment:
+                    segment_groups.append((previous_category, current_segment))
+                if not segment_groups:
+                    messagebox.showerror('Ошибка', 'Нет валидных данных для построения графика теплоощущения')
+                    self.clear_chart()
+                    return
+                added_categories = set()
+                for category, segment in segment_groups:
+                    if not segment:
+                        continue
+                    x_values, y_values = zip(*segment)
+                    show_in_legend = category not in added_categories
+                    if show_in_legend:
+                        added_categories.add(category)
+                    if chart_type == 'line':
+                        self.master.chart_figure.add_trace(go.Scatter(x=x_values, y=y_values, mode='lines', line=dict(
+                            color=self.master.sensation_colors.get(category, '#000000'), width=2), name=category))
+                    elif chart_type == 'bar':
+                        self.master.chart_figure.add_trace(go.Bar(x=x_values, y=y_values, name=category,
+                                                                  marker_color=self.master.sensation_colors.get(
+                                                                      category, '#000000')))
+                self.master.chart_figure.update_layout(
+                    yaxis_title='Эф. температура (°C)',
+                    title=dict(text=f'ЭТ и Теплоощущение\nПрибор: {y_device}', font=dict(size=16)),
+                    template='plotly_white', margin=dict(t=100), hovermode='x unified', plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    xaxis_rangeslider_visible=True,
+                    xaxis=dict(title='Дата', showline=True, linecolor='black', linewidth=1, mirror=True, showgrid=True,
+                               gridcolor='lightgrey', gridwidth=1, griddash='dot'),
+                    yaxis=dict(showline=True, linecolor='black', linewidth=1, mirror=True, showgrid=True,
+                               gridcolor='lightgrey', gridwidth=1, griddash='dot'))
+                for trace in self.master.chart_figure.data:
+                    if trace['type'] == 'scatter':
+                        line_color = trace['line']['color'] if 'line' in trace and 'color' in trace['line'] else None
+                        plt.plot(trace['x'], trace['y'], label=trace['name'], color=line_color)
+                    elif trace['type'] == 'bar':
+                        plt.bar(trace['x'], trace['y'], label=trace['name'], color=trace['marker']['color'])
+                plt.xlabel('Дата')
+                plt.ylabel('Эф. температура (°C)')
+                plt.title(f'ЭТ и Теплоощущение\nПрибор: {y_device}')
+                plt.grid(True)
+            self.master.chart_canvas = FigureCanvasTkAgg(self.master.matplotlib_figure,
+                                                         master=self.master.chart_display)
+            self.master.chart_canvas.draw()
+            self.master.chart_canvas.get_tk_widget().pack(fill='both', expand=True)
+        else:
+            if not y_parameters and self.master.chart_style.get() != 'scatter':
+                messagebox.showwarning('Нет полей', 'Выберите поля для оси Y')
+                return
+            self.master.chart_display = tk.Toplevel(self.master)
+            self.master.chart_display.protocol("WM_DELETE_WINDOW", self.clear_chart())
+            self.master.chart_display.title("График")
+            self.master.chart_display.geometry("800x600")
+            self.master.matplotlib_figure = plt.figure(figsize=(8, 6))
+            if self.master.chart_style.get() == 'scatter':
+                if not y_parameters:
+                    messagebox.showwarning('Нет полей', 'Выберите поля для оси Y для точечной диаграммы')
+                    self.clear_chart()
+                    return
+                for param in y_parameters:
+                    valid_data = y_data[param].dropna()
+                    plt.scatter(valid_data.index, valid_data, label=f'{param} ({y_device})', s=20)
+                plt.xlabel(x_parameter if x_parameter != 'Date' else 'Дата')
+                plt.ylabel('Значение')
+                plt.title(f'График\nПрибор: {y_device}')
+                plt.grid(True)
+                plt.legend()
+            else:
+                x_values = x_data[x_parameter] if x_parameter != 'Date' else x_data.index
+                for column in y_parameters:
+                    trace_label = f'{column} ({y_device})'
+                    if self.master.chart_style.get() == 'line':
+                        self.master.chart_figure.add_trace(
+                            go.Scatter(x=x_values, y=y_data[column], mode='lines', line=dict(width=2), name=trace_label,
+                                       showlegend=False))
+                    elif self.master.chart_style.get() == 'bar':
+                        self.master.chart_figure.add_trace(
+                            go.Bar(x=x_values, y=y_data[column], name=trace_label, showlegend=False))
+                if any([self.master.avg_one_hour.get(), self.master.avg_three_hours.get(),
+                        self.master.avg_one_day.get(), self.master.min_max_daily.get()]):
+                    resampled_data = y_data[y_parameters].copy()
+                    if not resampled_data.empty:
+                        last_row = resampled_data.iloc[-1].copy()
+                        last_timestamp = resampled_data.index[-1]
+                        new_timestamp = last_timestamp + pd.Timedelta(minutes=1 if len(resampled_data) <= 1 else min(
+                            (resampled_data.index[1:] - resampled_data.index[:-1]).total_seconds() / 60))
+                        last_row.name = new_timestamp
+                        resampled_data = pd.concat([resampled_data, last_row.to_frame().T])
+                    if self.master.avg_one_hour.get():
+                        resampled_one_hour = resampled_data.resample('1h').mean()
+                        for column in y_parameters:
+                            self.master.chart_figure.add_trace(
+                                go.Scatter(x=resampled_one_hour.index, y=resampled_one_hour[column], mode='lines',
+                                           line=dict(dash='dash', width=1.5, shape='hv'),
+                                           name=f'{column} 1ч ({y_device})'))
+                    if self.master.avg_three_hours.get():
+                        resampled_three_hours = resampled_data.resample('3h').mean()
+                        for column in y_parameters:
+                            self.master.chart_figure.add_trace(
+                                go.Scatter(x=resampled_three_hours.index, y=resampled_three_hours[column], mode='lines',
+                                           line=dict(dash='dot', width=1.5, shape='hv'),
+                                           name=f'{column} 3ч ({y_device})'))
+                    if self.master.avg_one_day.get():
+                        resampled_one_day = resampled_data.resample('D').mean()
+                        for column in y_parameters:
+                            if not resampled_one_day[column].dropna().empty:
+                                self.master.chart_figure.add_trace(
+                                    go.Scatter(x=resampled_one_day.index, y=resampled_one_day[column], mode='lines',
+                                               line=dict(dash='dashdot', width=1.5, shape='hv'),
+                                               name=f'{column} 1д ({y_device})'))
+                    if self.master.min_max_daily.get():
+                        daily_min = resampled_data.resample('D').min()
+                        daily_max = resampled_data.resample('D').max()
+                        for col in y_parameters:
+                            if not daily_min[col].dropna().empty:
+                                self.master.chart_figure.add_trace(
+                                    go.Scatter(x=daily_min.index, y=daily_min[col], mode='lines',
+                                               line=dict(dash='dash', width=1, color='blue'),
+                                               name=f'{col} min 1д ({y_device})'))
+                            if not daily_max[col].dropna().empty:
+                                self.master.chart_figure.add_trace(
+                                    go.Scatter(x=daily_max.index, y=daily_max[col], mode='lines',
+                                               line=dict(dash='solid', width=1, color='red'),
+                                               name=f'{col} max 1д ({y_device})'))
+                # TODO: fix dot chart legends
+                self.master.chart_figure.update_layout(
+                    yaxis_title='Значение', title=dict(text=f'График данных\nПрибор: {x_device}', font=dict(size=16)),
+                    template='plotly_white', margin=dict(t=100), hovermode='x unified', plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    xaxis_rangeslider_visible=True,
+                    xaxis=dict(title=x_parameter, showline=True, linecolor='black', linewidth=1, mirror=True,
+                               showgrid=True, gridcolor='lightgrey', gridwidth=1, griddash='dot'),
+                    yaxis=dict(showline=True, linecolor='black', linewidth=1, mirror=True, showgrid=True,
+                               gridcolor='lightgrey', gridwidth=1, griddash='dot'))
+                for trace in self.master.chart_figure.data:
+                    if trace['type'] == 'scatter':
+                        line_color = trace['line']['color'] if 'line' in trace and 'color' in trace['line'] else None
+                        if '1ч' in trace['name'] or '3ч' in trace['name'] or '1д' in trace['name']:
+                            plt.step(trace['x'], trace['y'], label=trace['name'], color=line_color, where='post')
+                        else:
+                            plt.plot(trace['x'], trace['y'], label=trace['name'], color=line_color)
+                    elif trace['type'] == 'bar':
+                        plt.bar(trace['x'], trace['y'], label=trace['name'])
+                plt.xlabel(x_parameter)
+                plt.ylabel('Значение')
+                plt.title(f'График\nПрибор: {x_device}')
+                plt.grid(True)
+            self.master.chart_canvas = FigureCanvasTkAgg(self.master.matplotlib_figure,
+                                                         master=self.master.chart_display)
+            self.master.chart_canvas.draw()
+            self.master.chart_canvas.get_tk_widget().pack(fill='both', expand=True)
