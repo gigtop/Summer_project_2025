@@ -45,7 +45,6 @@ class DataProcessor:
             #TODO: Long loading
             for num,value in enumerate(json_data.values()):
                 value_num = num/len(json_data.values())
-                #self._update_progress_bar(value_num)
                 self.master.after(0, lambda: self.master.gui.loading_bar.config(value=value_num*100))
                 if 'uName' not in value or 'serial' not in value or 'Date' not in value or 'data' not in value:
                     continue
@@ -67,20 +66,6 @@ class DataProcessor:
         finally:
             self.is_loading = False
             self.master.after(0, self._complete_load)
-
-    def _update_progress_bar(self, progress):
-        """
-        Я так понимаю что из-за передачи print идет в два потока, поэтому приложение не тормозит.
-        Чисто если перекинуть:
-            self.master.gui.loading_bar['value'] = value_num
-            print(value_num)
-        То ничего не изменится.
-        """
-        if self.is_loading:
-            print(progress)
-            self.loading_progress = progress*100
-            self.master.after(0, lambda: self.master.gui.loading_bar.config(value=self.loading_progress))
-
 
     def _complete_load(self):
         self.master.gui.loading_bar.grid_remove()
