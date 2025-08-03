@@ -39,14 +39,14 @@ Calculus Graphicus — это приложение на Python для визуа
   
 Python 3.8+  
 #### Библиотеки:  
-tkinter  
-ttkbootstrap 
-threading
-time
-pandas 
-plotly  
-matplotlib
-json
+- tkinter 
+- ttkbootstrap 
+- threading
+- time
+- pandas
+- plotly
+- matplotlib
+- json
 
   
 Файл иконки: myApp.ico (для Windows).  
@@ -55,7 +55,14 @@ json
   
 Установите Python 3.8+.  
 Установите зависимости:
-ttkbootstrap pandas matplotlib plotly  
+- tkinter 
+- ttkbootstrap 
+- threading
+- time
+- pandas
+- plotly
+- matplotlib
+- json
 
 Поместите файл myApp.ico в корневую папку проекта (для иконки окна).  
   
