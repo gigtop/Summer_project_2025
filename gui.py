@@ -19,11 +19,12 @@ class ChartAppGUI:
         self.humidity_selector = None
         self.load_json_button = None
         self.loading_bar = None
+
         self._initialize_widgets()
         self._configure_time_validation()
 
-
     def _initialize_widgets(self):
+        """Styles ttkbootstrap"""
         style = ttk.Style(theme='litera')
         style.configure('TButton', font=('Arial', 10), padding=8, borderadius=15)
         style.configure('TLabel', font=('Arial', 10))
@@ -31,19 +32,25 @@ class ChartAppGUI:
         style.configure('TRadiobutton', font=('Arial', 10))
         style.configure('TLabelframe', font=('Arial', 11, 'bold'), borderadius=10)
         style.configure('TLabelframe.Label', font=('Arial', 11, 'bold'))
+
+        """Creating and placing frames"""
         primary_frame = ttk.Frame(self.master, padding=10)
-        primary_frame.grid(row=0, column=0, sticky='nsew')
+        primary_frame.grid(row=0, column=0, sticky='nesw')
         self.master.grid_columnconfigure(0, weight=1)
         self.master.grid_rowconfigure(0, weight=1)
         left_frame = ttk.Frame(primary_frame, padding=5)
         left_frame.grid(row=0, column=0, sticky='nsw', padx=5)
         right_frame = ttk.Frame(primary_frame, padding=5)
-        right_frame.grid(row=0, column=1, sticky='nsew', padx=5)
+        right_frame.grid(row=0, column=1, sticky='nesw', padx=5)
         primary_frame.columnconfigure(0, weight=1)
         primary_frame.columnconfigure(1, weight=1)
+
+        """data load frame"""
         data_load_frame = ttk.LabelFrame(left_frame, text='Загрузка данных', padding=10, bootstyle='primary')
         data_load_frame.grid(row=0, column=0, sticky='ew', pady=5)
         data_load_frame.columnconfigure(1, weight=1)
+
+        """load_json_button and loading_bar"""
         self.load_json_button = ttk.Button(data_load_frame, text='Загрузить JSON',
                                            command=self.master.data_processor._begin_json_load, bootstyle='primary')
         self.load_json_button.grid(row=0, column=0, padx=5, sticky='w')
@@ -51,6 +58,8 @@ class ChartAppGUI:
                                            bootstyle='primary')
         self.loading_bar.grid(row=0, column=1, padx=5, sticky='ew')
         self.loading_bar.grid_remove()
+
+        """device_select_frame"""
         device_select_frame = ttk.LabelFrame(left_frame, text='Выбор устройств', padding=10, bootstyle='primary')
         device_select_frame.grid(row=1, column=0, sticky='ew', pady=5)
         device_select_frame.columnconfigure(1, weight=1)
@@ -60,6 +69,8 @@ class ChartAppGUI:
         self.device_selector.grid(row=0, column=1, padx=5, sticky='ew')
         self.device_selector.bind('<<ComboboxSelected>>', self.master.data_processor._handle_x_device_selection)
         self.device_selector.bind('<<ComboboxSelected>>', self.master.data_processor._handle_y_device_selection)
+
+        """axis_params_frame"""
         axis_params_frame = ttk.LabelFrame(left_frame, text='Параметры осей', padding=10, bootstyle='primary')
         axis_params_frame.grid(row=2, column=0, sticky='ew', pady=5)
         axis_params_frame.columnconfigure(0, weight=1)
@@ -82,6 +93,8 @@ class ChartAppGUI:
                                     bootstyle='primary')
         y_scrollbar.pack(side='right', fill='y')
         self.y_axis_list.config(yscrollcommand=y_scrollbar.set)
+
+        """settings_frame"""
         settings_frame = ttk.LabelFrame(right_frame, text='Настройки', padding=10, bootstyle='primary')
         settings_frame.grid(row=0, column=0, sticky='ew', pady=5)
         settings_frame.columnconfigure(0, weight=1)
@@ -125,11 +138,15 @@ class ChartAppGUI:
                         bootstyle='primary').grid(row=5, column=2, sticky='w', pady=2)
         ttk.Checkbutton(settings_frame, text='Мин/макс за 1 д', variable=self.master.min_max_daily,
                         bootstyle='primary').grid(row=5, column=3, sticky='w', padx=5, pady=2)
+
+        """chart_type_frame"""
         chart_type_frame = ttk.LabelFrame(right_frame, text='Тип графика', padding=10, bootstyle='primary')
         chart_type_frame.grid(row=1, column=0, sticky='ew', pady=5)
         for label, value in [('Линейный', 'line'), ('Столбчатый', 'bar'), ('Точечная', 'scatter')]:
             ttk.Radiobutton(chart_type_frame, text=label, variable=self.master.chart_style, value=value,
                             bootstyle='primary').pack(side='left', padx=10, pady=5)
+
+        """button_frame"""
         button_frame = ttk.Frame(right_frame, padding=10)
         button_frame.grid(row=2, column=0, sticky='ew', pady=5)
         ttk.Button(button_frame, text='Построить', command=self.master.data_processor.render_chart,
@@ -139,9 +156,11 @@ class ChartAppGUI:
         hour_validator = (self.master.register(self._validate_hour), '%P')
         self.start_hour_entry.configure(validate='key', validatecommand=hour_validator)
         self.end_hour_entry.configure(validate='key', validatecommand=hour_validator)
+
         minute_validator = (self.master.register(self._validate_minute), '%P')
         self.start_minute_entry.configure(validate='key', validatecommand=minute_validator)
         self.end_minute_entry.configure(validate='key', validatecommand=minute_validator)
+
         self.start_hour_entry.bind('<FocusOut>', self._correct_hour)
         self.end_hour_entry.bind('<FocusOut>', self._correct_hour)
         self.start_minute_entry.bind('<FocusOut>', self._correct_minute)
