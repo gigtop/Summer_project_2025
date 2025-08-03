@@ -1,6 +1,7 @@
+import json
 import unittest
 import tkinter as tk
-from unittest.mock import MagicMock
+from unittest.mock import mock_open, patch, MagicMock
 import ttkbootstrap as ttk
 
 from main import ChartApp
@@ -302,6 +303,28 @@ class TestChartApp(unittest.TestCase):
         self.assertEqual(self.processor._classify_sensation(-20), "Очень холодно")
         self.assertEqual(self.processor._classify_sensation(-30), "Крайне холодно")
         self.assertIsNone(self.processor._classify_sensation(float("nan")))
+
+    #Отсюда тесты без последовательности
+    def test_process_json_load(self):
+        mock_data = {
+            "device1": {
+                "uName": "Test Device",
+                "serial": "12345",
+                "Date": "2023-01-01 12:00:00",
+                "data": {"weather_temp": 20.5, "weather_humidity": 60.0}
+            }
+        }
+        with patch('builtins.open', mock_open(read_data=json.dumps(mock_data))):
+            with patch('tkinter.filedialog.askopenfilename', return_value='test.json'):
+                with patch.object(self.mock_app, 'after') as mock_after:
+                    self.processor._process_json_load1()
+                    self.assertTrue(mock_after.called)
+                    self.assertEqual(len(self.mock_app.device_data), 1)
+
+
+
+    def tearDown(self):
+        self.root.destroy()
 
 
 if __name__ == '__main__':

@@ -13,17 +13,16 @@ class DataProcessor:
     def __init__(self, master):
         self.master = master
         self.master.chart_figure = go.Figure()
-        self.loading_progress = 0
         self.loading_thread = None
-        self.is_loading = False
 
-    def _parse_datetime(self, date_combobox, hour_entry, minute_entry):
+    @staticmethod
+    def _parse_datetime(date_combobox, hour_entry, minute_entry):
         try:
             date_str = date_combobox.get()
             date_struct = time.strptime(date_str, "%d-%m")
             hour = int(hour_entry.get()) if hour_entry.get() else 0
             minute = int(minute_entry.get()) if minute_entry.get() else 0
-            return (date_struct.tm_mday, hour, minute)
+            return date_struct.tm_mday, hour, minute
         except Exception:
             return None
 
@@ -31,8 +30,8 @@ class DataProcessor:
         self.master.gui.load_json_button.config(state='disabled')
         self.master.gui.loading_bar.grid()
         self.master.gui.loading_bar['value'] = 0
-        self.is_loading = True
         threading.Thread(target=self._process_json_load1, daemon=True).start()
+
     def _process_json_load1(self):
         file_path = filedialog.askopenfilename(filetypes=[('JSON', '*.json;*.txt')])
         if not file_path:
@@ -42,10 +41,11 @@ class DataProcessor:
             with open(file_path, 'r', encoding='utf-8') as file:
                 json_data = json.load(file)
             temp_device_data = {}
+
             #TODO: Long loading
-            for num,value in enumerate(json_data.values()):
-                value_num = num/len(json_data.values())
-                self.master.after(0, lambda: self.master.gui.loading_bar.config(value=value_num*100))
+            for num, value in enumerate(json_data.values()):
+                value_num = num / len(json_data.values())
+                self.master.after(0, lambda: self.master.gui.loading_bar.config(value=value_num * 100))
                 if 'uName' not in value or 'serial' not in value or 'Date' not in value or 'data' not in value:
                     continue
                 device_name = f"{value['uName']} ({value['serial']})"
@@ -64,15 +64,12 @@ class DataProcessor:
         except Exception as e:
             self.master.after(0, lambda: messagebox.showerror('Ошибка', str(e)))
         finally:
-            self.is_loading = False
             self.master.after(0, self._complete_load)
 
     def _complete_load(self):
         self.master.gui.loading_bar.grid_remove()
         self.master.gui.load_json_button.config(state='normal')
         self.master.gui.loading_bar['value'] = 0
-        self.loading_progress = 0
-        self.is_loading = False
 
     def _update_device_lists(self):
         device_names = list(self.master.device_data.keys())
@@ -82,8 +79,11 @@ class DataProcessor:
             self._handle_x_device_selection(None)
             self._handle_y_device_selection(None)
 
-    def _handle_x_device_selection(self, event):
-        # TODO: see
+    def _handle_x_device_selection(self, event=None):
+        """
+        Событие <<ComboboxSelected>> автоматически передает объект события (event) как аргумент в привязанный метод.
+        Соответственно метод _handle_x_device_selection определённый без параметра event выдаст ошибку.
+        """
         selected_device = self.master.gui.device_selector.get()
         if selected_device in self.master.device_data:
             dataframe = self.master.device_data[selected_device]
@@ -156,8 +156,8 @@ class DataProcessor:
             plt.close(self.master.matplotlib_figure)
             self.master.matplotlib_figure = None
 
-
-    def _classify_sensation(self, effective_temp):
+    @staticmethod
+    def _classify_sensation(effective_temp):
         if pd.isna(effective_temp):
             return None
         thresholds = [(30, 'Очень жарко'), (24, 'Жарко'), (18, 'Тепло'), (12, 'Умеренно тепло'),
@@ -228,7 +228,6 @@ class DataProcessor:
             if valid_data.empty:
                 messagebox.showerror('Ошибка', 'Нет валидных данных для построения графика теплоощущения')
                 return
-            print("start")
             chart_type = self.master.chart_style.get()
             self.master.chart_display = tk.Toplevel(self.master)
             self.master.chart_display.protocol("WM_DELETE_WINDOW", self.clear_chart)
