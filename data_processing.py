@@ -16,14 +16,19 @@ class DataProcessor:
         self.loading_thread = None
 
     @staticmethod
-    def _parse_datetime(date_combobox, hour_entry, minute_entry):
+    def _parse_datetime(date_combobox, hour_entry, minute_entry, min_datetime=None):
         try:
             date_str = date_combobox.get()
+            if not date_str:
+                return None
+            year = min_datetime.year if min_datetime else pd.Timestamp.now().year
             date_struct = time.strptime(date_str, "%d-%m")
             hour = int(hour_entry.get()) if hour_entry.get() else 0
             minute = int(minute_entry.get()) if minute_entry.get() else 0
-            return date_struct.tm_mday, hour, minute
-        except Exception:
+            return year, date_struct.tm_mon, date_struct.tm_mday, hour, minute
+        except ValueError as e:
+            print(
+                f"Ошибка парсинга даты: {e}, date_str={date_str}, hour={hour_entry.get()}, minute={minute_entry.get()}")
             return None
 
     def _begin_json_load(self):
@@ -42,7 +47,6 @@ class DataProcessor:
                 json_data = json.load(file)
             temp_device_data = {}
 
-            #TODO: Long loading
             for num, value in enumerate(json_data.values()):
                 value_num = num / len(json_data.values())
                 self.master.after(0, lambda: self.master.gui.loading_bar.config(value=value_num * 100))
