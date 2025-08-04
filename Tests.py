@@ -3,6 +3,8 @@ import unittest
 import tkinter as tk
 from unittest.mock import mock_open, patch, MagicMock
 import ttkbootstrap as ttk
+import pandas as pd
+import plotly.graph_objects as go
 
 from main import ChartApp
 from gui import ChartAppGUI
@@ -41,6 +43,7 @@ class TestChartApp(unittest.TestCase):
             'Тепло': '#FFD700', 'Жарко': '#FF8C00', 'Очень жарко': '#FF0000'
         }
         self.processor = DataProcessor(self.mock_app)
+
 
     # ==TestChartAppMain==
     def test_initialization_main(self):
@@ -321,6 +324,179 @@ class TestChartApp(unittest.TestCase):
                     self.assertTrue(mock_after.called)
                     self.assertEqual(len(self.mock_app.device_data), 1)
 
+    # ==TestDataProcessorNewMethods==
+    def test_get_selected_device_and_parameters(self):
+        self.mock_app.gui.device_selector.get.return_value = "Test Device (12345)"
+        self.mock_app.device_data = {"Test Device (12345)": pd.DataFrame()}
+        self.mock_app.gui.x_axis_list.curselection.return_value = (0,)
+        self.mock_app.gui.x_axis_list.get.return_value = "Date"
+        self.mock_app.gui.y_axis_list.curselection.return_value = (0, 1)
+        self.mock_app.gui.y_axis_list.get.side_effect = ["weather_temp", "weather_humidity"]
+        device, x_param, y_params = self.processor._get_selected_device_and_parameters()
+        self.assertEqual(device, "Test Device (12345)")
+        self.assertEqual(x_param, "Date")
+        self.assertEqual(y_params, ["weather_temp", "weather_humidity"])
+        self.mock_app.gui.device_selector.get.return_value = ""
+        device, x_param, y_params = self.processor._get_selected_device_and_parameters()
+        self.assertIsNone(device)
+        self.assertIsNone(x_param)
+        self.assertIsNone(y_params)
+        self.mock_app.gui.device_selector.get.return_value = "Test Device (12345)"
+        self.mock_app.gui.x_axis_list.curselection.return_value = ()
+        device, x_param, y_params = self.processor._get_selected_device_and_parameters()
+        self.assertIsNone(device)
+        self.assertIsNone(x_param)
+        self.assertIsNone(y_params)
+
+    def test_filter_data_by_date(self):
+        data = pd.DataFrame(
+            {"weather_temp": [20, 21, 22]},
+            index=pd.to_datetime(["2023-01-01 12:00", "2023-01-01 13:00", "2023-01-02 12:00"])
+        )
+        self.mock_app.filter_by_date.set(False)
+        result = self.processor._filter_data_by_date(data, None, None)
+        self.assertTrue(data.equals(result))
+        self.mock_app.filter_by_date.set(True)
+        self.mock_app.min_datetime = pd.Timestamp("2023-01-01 00:00")
+        self.mock_app.max_datetime = pd.Timestamp("2023-01-02 23:59")
+        start_datetime = (2023, 1, 1, 12, 0)
+        end_datetime = (2023, 1, 1, 14, 0)
+        result = self.processor._filter_data_by_date(data, start_datetime, end_datetime)
+        expected = data[
+            (data.index >= pd.Timestamp("2023-01-01 12:00")) & (data.index <= pd.Timestamp("2023-01-01 14:00"))]
+        self.assertTrue(expected.equals(result))
+        start_datetime = (2023, 1, 2, 12, 0)
+        end_datetime = (2023, 1, 1, 12, 0)
+        result = self.processor._filter_data_by_date(data, start_datetime, end_datetime)
+        self.assertIsNone(result)
+        start_datetime = None
+        result = self.processor._filter_data_by_date(data, start_datetime, end_datetime)
+        self.assertIsNone(result)
+
+    def test_calculate_effective_temperature(self):
+        data = pd.DataFrame({
+            "weather_temp": [20.0, 25.0, None],
+            "weather_humidity": [50.0, 60.0, 70.0]
+        })
+        temp_column, humidity_column = "weather_temp", "weather_humidity"
+        effective_temp, sensation = self.processor._calculate_effective_temperature(data, temp_column, humidity_column)
+        expected_temp = pd.Series([18.0, 22.6, None], index=effective_temp.index)
+        expected_sensation = pd.Series(["Тепло", "Тепло", None],
+                                       index=effective_temp.index)  # Исправлено: 22.6 -> "Тепло"
+        pd.testing.assert_series_equal(effective_temp, expected_temp, check_dtype=False)
+        pd.testing.assert_series_equal(sensation, expected_sensation, check_dtype=False)
+
+        result = self.processor._calculate_effective_temperature(data, None, humidity_column)
+        self.assertIsNone(result[0])
+        self.assertIsNone(result[1])
+
+        data_invalid = pd.DataFrame({"other_column": [1, 2, 3]})
+        result = self.processor._calculate_effective_temperature(data_invalid, temp_column, humidity_column)
+        self.assertIsNone(result[0])
+        self.assertIsNone(result[1])
+
+        data_nan = pd.DataFrame({"weather_temp": [None, None], "weather_humidity": [None, None]})
+        result = self.processor._calculate_effective_temperature(data_nan, temp_column, humidity_column)
+        self.assertIsNone(result[0])
+        self.assertIsNone(result[1])
+
+
+    def test_create_chart_window(self):
+        with patch.object(self.processor, 'clear_chart') as mock_clear:
+            with patch('tkinter.Toplevel') as mock_toplevel:
+                with patch('matplotlib.pyplot.figure') as mock_figure:
+                    self.processor._create_chart_window("Test Chart")
+                    mock_clear.assert_called_once()
+                    mock_toplevel.assert_called_once_with(self.mock_app)
+                    mock_toplevel().protocol.assert_called_once_with("WM_DELETE_WINDOW", self.processor.clear_chart)
+                    mock_toplevel().title.assert_called_once_with("Test Chart")
+                    mock_toplevel().geometry.assert_called_once_with("800x600")
+                    mock_figure.assert_called_once_with(figsize=(8, 6))
+                    self.assertIsNotNone(self.mock_app.chart_display)
+                    self.assertIsNotNone(self.mock_app.matplotlib_figure)
+
+    def test_add_effective_temp_traces(self):
+        valid_data = pd.Series([18.0, 25.0], index=pd.to_datetime(["2023-01-01", "2023-01-02"]))
+        valid_sensation = pd.Series(["Тепло", "Жарко"], index=valid_data.index)
+        self.mock_app.chart_figure = go.Figure()
+
+        # Mock the _create_chart_window to avoid GUI interaction
+        with patch.object(self.processor, '_create_chart_window') as mock_create_window:
+            # Test line chart
+            self.processor._add_effective_temp_traces("line", valid_data, valid_sensation, "Test Device")
+            self.assertEqual(len(self.mock_app.chart_figure.data), 2)
+            self.assertEqual(self.mock_app.chart_figure.data[0]['mode'], 'lines')
+            self.assertEqual(self.mock_app.chart_figure.data[0]['name'], 'Тепло')
+            self.assertEqual(self.mock_app.chart_figure.data[1]['name'], 'Жарко')
+            self.assertEqual(self.mock_app.chart_figure.data[0]['line']['color'],
+                             self.mock_app.sensation_colors['Тепло'])
+
+            # Test bar chart
+            self.mock_app.chart_figure = go.Figure()
+            self.processor._add_effective_temp_traces("bar", valid_data, valid_sensation, "Test Device")
+            self.assertEqual(len(self.mock_app.chart_figure.data), 2)
+            self.assertEqual(self.mock_app.chart_figure.data[0]['type'], 'bar')
+            self.assertEqual(self.mock_app.chart_figure.data[0]['name'], 'Тепло')
+            self.assertEqual(self.mock_app.chart_figure.data[1]['name'], 'Жарко')
+            self.assertEqual(self.mock_app.chart_figure.data[0]['marker']['color'],
+                             self.mock_app.sensation_colors['Тепло'])
+
+            # Test scatter chart
+            self.mock_app.chart_figure = go.Figure()
+            self.processor._add_effective_temp_traces("scatter", valid_data, valid_sensation, "Test Device")
+            self.assertEqual(len(self.mock_app.chart_figure.data), 2)
+            self.assertEqual(self.mock_app.chart_figure.data[0]['mode'], 'markers')
+            self.assertEqual(self.mock_app.chart_figure.data[0]['name'], 'Тепло')
+            self.assertEqual(self.mock_app.chart_figure.data[1]['name'], 'Жарко')
+            self.assertEqual(self.mock_app.chart_figure.data[0]['marker']['color'],
+                             self.mock_app.sensation_colors['Тепло'])
+            self.assertEqual(self.mock_app.chart_figure.data[0]['marker']['size'], 8)
+            self.assertEqual(self.mock_app.chart_figure.data[0]['marker']['opacity'], 0.7)
+
+            # Test empty data
+            empty_data = pd.Series([], dtype=float)
+            empty_sensation = pd.Series([], dtype=object)
+            self.mock_app.chart_figure = go.Figure()
+            with patch('tkinter.messagebox.showerror') as mock_error:
+                with patch.object(self.processor, 'clear_chart') as mock_clear:
+                    self.processor._add_effective_temp_traces("line", empty_data, empty_sensation, "Test Device")
+                    mock_error.assert_called_once_with('Ошибка',
+                                                       'Нет валидных данных для построения графика теплоощущения.')
+                    mock_clear.assert_called_once()
+
+    def test_add_regular_traces(self):
+        data = pd.DataFrame({
+            "weather_temp": [20.0, 21.0, 22.0],
+            "weather_humidity": [50.0, 60.0, 70.0]
+        }, index=pd.to_datetime(["2023-01-01 12:00", "2023-01-01 13:00", "2023-01-01 14:00"]))
+        self.mock_app.chart_figure = MagicMock()
+        self.mock_app.avg_one_hour.set(True)
+        self.processor._add_regular_traces("line", data, data, "Date", ["weather_temp"], "Test Device")
+        self.mock_app.chart_figure.add_trace.assert_called()
+        self.assertGreaterEqual(self.mock_app.chart_figure.add_trace.call_count, 2)  # Основной график + осреднение
+
+    def test_add_regular_traces_scatter(self):
+        self.mock_app.chart_style.set('scatter')
+        self.mock_app.device_data = {
+            'Test Device (12345)': pd.DataFrame({
+                'weather_temp': [20.5, 21.0],
+                'weather_humidity': [60.0, 65.0]
+            }, index=pd.to_datetime(['2023-01-01 12:00:00', '2023-01-01 13:00:00']))
+        }
+        self.mock_app.gui.device_selector.get.return_value = 'Test Device (12345)'
+        self.mock_app.gui.x_axis_list.curselection.return_value = (0,)
+        self.mock_app.gui.x_axis_list.get.return_value = 'Date'
+        self.mock_app.gui.y_axis_list.curselection.return_value = (0,)
+        self.mock_app.gui.y_axis_list.get.return_value = 'weather_temp'
+        self.mock_app.chart_figure = go.Figure()
+        self.processor._add_regular_traces('scatter', self.mock_app.device_data['Test Device (12345)'],
+                                           self.mock_app.device_data['Test Device (12345)'], 'Date', ['weather_temp'],
+                                           'Test Device (12345)')
+        self.assertEqual(len(self.mock_app.chart_figure.data), 1)
+        self.assertEqual(self.mock_app.chart_figure.data[0]['mode'], 'markers')
+        self.assertEqual(self.mock_app.chart_figure.data[0]['name'], 'weather_temp (Test Device (12345))')
+        self.assertEqual(self.mock_app.chart_figure.data[0]['marker']['size'], 8)
+        self.assertEqual(self.mock_app.chart_figure.data[0]['marker']['opacity'], 0.7)
 
 
     def tearDown(self):
