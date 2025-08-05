@@ -35,9 +35,9 @@ class DataProcessor:
         self.master.gui.load_json_button.config(state='disabled')
         self.master.gui.loading_bar.grid()
         self.master.gui.loading_bar['value'] = 0
-        threading.Thread(target=self._process_json_load1, daemon=True).start()
+        threading.Thread(target=self._process_json_load, daemon=True).start()
 
-    def _process_json_load1(self):
+    def _process_json_load(self):
         file_path = filedialog.askopenfilename(filetypes=[('JSON', '*.json;*.txt')])
         if not file_path:
             self.master.after(0, self._complete_load)
@@ -360,12 +360,24 @@ class DataProcessor:
             if self.master.min_max_daily.get():
                 daily_min = resampled_data.resample('D').min()
                 daily_max = resampled_data.resample('D').max()
+                print(f"Последнее время последнего дня: {resampled_data.index[-1].strftime('%H:%M:%S')}")
+                print(resampled_data.index[-1].strftime('%H:%M:%S') > "01:00:00")
                 for col in y_parameters:
                     if not daily_min[col].dropna().empty:
+                        #Следующая строка нужна для правильной min линии
+                        if resampled_data.index[-1].strftime('%H:%M:%S') > "01:00:00":
+                            daily_min = pd.concat([daily_min, pd.DataFrame({col: [daily_min[col].iloc[-1]]}, index=[
+                                daily_min.index[-1] + pd.Timedelta(days=1)])])
+                        print([index for index in daily_min.index])
                         self.master.chart_figure.add_trace(
                             go.Scatter(x=daily_min.index, y=daily_min[col], mode='lines',
                                        line=dict(dash='dash', width=1, color='blue'), name=f'{col} min 1д ({device})'))
                     if not daily_max[col].dropna().empty:
+                        # Следующая строка нужна для правильной max линии
+                        if resampled_data.index[-1].strftime('%H:%M:%S') > "01:00:00":
+                            daily_max = pd.concat([daily_max, pd.DataFrame({col: [daily_max[col].iloc[-1]]}, index=[
+                            daily_max.index[-1] + pd.Timedelta(days=1)])])
+                        print([index for index in daily_max.index])
                         self.master.chart_figure.add_trace(
                             go.Scatter(x=daily_max.index, y=daily_max[col], mode='lines',
                                        line=dict(dash='solid', width=1, color='red'), name=f'{col} max 1д ({device})'))

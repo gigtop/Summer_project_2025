@@ -285,7 +285,7 @@ class TestChartApp(unittest.TestCase):
             self.mock_app.gui.start_hour_entry,
             self.mock_app.gui.start_minute_entry
         )
-        self.assertEqual(result, (1, 12, 30))
+        self.assertEqual(result, (2025, 1, 1, 12, 30))
 
         self.mock_app.gui.start_datetime_selector.get.return_value = "invalid"
         result = self.processor._parse_datetime(
@@ -320,7 +320,7 @@ class TestChartApp(unittest.TestCase):
         with patch('builtins.open', mock_open(read_data=json.dumps(mock_data))):
             with patch('tkinter.filedialog.askopenfilename', return_value='test.json'):
                 with patch.object(self.mock_app, 'after') as mock_after:
-                    self.processor._process_json_load1()
+                    self.processor._process_json_load()
                     self.assertTrue(mock_after.called)
                     self.assertEqual(len(self.mock_app.device_data), 1)
 
