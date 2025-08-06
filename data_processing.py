@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from tkinter import messagebox, filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
+import matplotlib.dates as mdates
 
 class DataProcessor:
     def __init__(self, master):
@@ -227,46 +227,38 @@ class DataProcessor:
         self.master.chart_display.geometry("800x600")
         self.master.matplotlib_figure = plt.figure(figsize=(8, 6))
 
-    def _add_effective_temp_traces(self, chart_type, valid_data, valid_sensation, device):
-        segment_groups = []
-        current_segment = []
-        previous_category = None
-        for timestamp, value, category in zip(valid_data.index, valid_data, valid_sensation):
-            if category != previous_category and previous_category is not None:
-                if current_segment:
-                    segment_groups.append((previous_category, current_segment))
-                current_segment = [(timestamp, value)]
-            else:
-                current_segment.append((timestamp, value))
-            previous_category = category
-        if current_segment:
-            segment_groups.append((previous_category, current_segment))
-        if not segment_groups:
+
+
+    def _add_effective_temp_traces(self, chart_type, effective_temp, sensation, device):
+
+        if effective_temp.empty:
             messagebox.showerror('Ошибка', 'Нет валидных данных для построения графика теплоощущения.')
             self.clear_chart()
             return
-        added_categories = set()
-        for category, segment in segment_groups:
-            if not segment:
-                continue
-            x_values, y_values = zip(*segment)
-            show_in_legend = category not in added_categories
-            if show_in_legend:
-                added_categories.add(category)
+
+        unique_sensations = sensation.dropna().unique()
+        self._create_chart_window("График")
+
+        for category in unique_sensations:
+            mask = sensation == category
+            x_values = effective_temp.index[mask]
+            y_values = effective_temp[mask]
+
+            trace_label = f'{category} ({device})'
             if chart_type == 'line':
                 self.master.chart_figure.add_trace(go.Scatter(
                     x=x_values,
                     y=y_values,
                     mode='lines',
-                    line=dict(color=self.master.sensation_colors.get(category, '#000000'), width=2),
-                    name=category
+                    line=dict(width=2, color=self.master.sensation_colors.get(category, '#000000')),
+                    name=trace_label
                 ))
             elif chart_type == 'bar':
                 self.master.chart_figure.add_trace(go.Bar(
                     x=x_values,
                     y=y_values,
-                    name=category,
-                    marker_color=self.master.sensation_colors.get(category, '#000000')
+                    marker=dict(color=self.master.sensation_colors.get(category, '#000000')),
+                    name=trace_label
                 ))
             elif chart_type == 'scatter':
                 self.master.chart_figure.add_trace(go.Scatter(
@@ -278,8 +270,9 @@ class DataProcessor:
                         color=self.master.sensation_colors.get(category, '#000000'),
                         opacity=0.7
                     ),
-                    name=category
+                    name=trace_label
                 ))
+
         self.master.chart_figure.update_layout(
             yaxis_title='Эф. температура (°C)',
             title=dict(text=f'ЭТ и Теплоощущение\nПрибор: {device}', font=dict(size=16)),
@@ -320,8 +313,9 @@ class DataProcessor:
                 self.master.chart_figure.add_trace(
                     go.Scatter(x=x_values, y=y_data[column], mode='lines', line=dict(width=2), name=trace_label))
             elif chart_type == 'bar':
-                self.master.chart_figure.add_trace(
-                    go.Bar(x=x_values, y=y_data[column], name=trace_label))
+                self.master.chart_figure.add_trace(go.Bar(x=x_values, y=y_data[column],
+                                                          name=trace_label, width=0.1))
+
             elif chart_type == 'scatter':
                 self.master.chart_figure.add_trace(
                     go.Scatter(x=x_values, y=y_data[column], mode='markers', marker=dict(size=8, opacity=0.7),
@@ -360,15 +354,12 @@ class DataProcessor:
             if self.master.min_max_daily.get():
                 daily_min = resampled_data.resample('D').min()
                 daily_max = resampled_data.resample('D').max()
-                print(f"Последнее время последнего дня: {resampled_data.index[-1].strftime('%H:%M:%S')}")
-                print(resampled_data.index[-1].strftime('%H:%M:%S') > "01:00:00")
                 for col in y_parameters:
                     if not daily_min[col].dropna().empty:
                         #Следующая строка нужна для правильной min линии
                         if resampled_data.index[-1].strftime('%H:%M:%S') > "01:00:00":
                             daily_min = pd.concat([daily_min, pd.DataFrame({col: [daily_min[col].iloc[-1]]}, index=[
                                 daily_min.index[-1] + pd.Timedelta(days=1)])])
-                        print([index for index in daily_min.index])
                         self.master.chart_figure.add_trace(
                             go.Scatter(x=daily_min.index, y=daily_min[col], mode='lines',
                                        line=dict(dash='dash', width=1, color='blue'), name=f'{col} min 1д ({device})'))
@@ -421,15 +412,17 @@ class DataProcessor:
         plt.ylabel('Значение')
         plt.title(f'График\nПрибор: {device}')
         plt.grid(True)
-        if plt.gca().get_legend_handles_labels()[0]:  # Проверяем, есть ли метки для легенды
+        if x_parameter == 'Date':
+            plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            plt.gca().xaxis.set_major_locator(mdates.AutoDateLocator())
+            plt.xticks(rotation=45)
+        if plt.gca().get_legend_handles_labels()[0]:
             plt.legend()
         self.master.chart_canvas = FigureCanvasTkAgg(self.master.matplotlib_figure, master=self.master.chart_display)
         self.master.chart_canvas.draw()
-        # Используем grid вместо pack
         self.master.chart_canvas.get_tk_widget().grid(row=0, column=0, sticky='nsew')
         self.master.chart_display.grid_rowconfigure(0, weight=1)
         self.master.chart_display.grid_columnconfigure(0, weight=1)
-
 
     def render_chart(self):
         # Получение выбранного устройства и параметров
@@ -453,10 +446,12 @@ class DataProcessor:
             data = filtered_data
             data = data.loc[data.index.intersection(data.index)]  # Синхронизация индексов
 
-        # Создание окна графика
-        self._create_chart_window("График")
+        # Проверка параметров Y в обычном режиме
+        if not self.master.effective_temp_mode.get() and not y_parameters:
+            messagebox.showwarning('Нет полей', 'Выберите поля для оси Y.')
+            return
 
-        # Режим эффективной температуры
+        # Проверка данных для эффективной температуры
         if self.master.effective_temp_mode.get():
             effective_temp, sensation = self._calculate_effective_temperature(
                 data, self.master.gui.temp_selector.get(), self.master.gui.humidity_selector.get())
@@ -467,11 +462,14 @@ class DataProcessor:
             if valid_data.empty:
                 messagebox.showerror('Ошибка', 'Нет валидных данных для построения графика теплоощущения.')
                 return
+
+        # Создание окна графика только после всех проверок
+        self._create_chart_window("График")
+
+        # Режим эффективной температуры
+        if self.master.effective_temp_mode.get():
             self._add_effective_temp_traces(chart_type, valid_data, valid_sensation, device)
         else:
-            if not y_parameters:
-                messagebox.showwarning('Нет полей', 'Выберите поля для оси Y.')
-                return
             self._add_regular_traces(chart_type, data, data, x_parameter, y_parameters, device)
             self.master.chart_figure.update_layout(
                 yaxis_title='Значение',
