@@ -368,7 +368,6 @@ class DataProcessor:
                         if resampled_data.index[-1].strftime('%H:%M:%S') > "01:00:00":
                             daily_max = pd.concat([daily_max, pd.DataFrame({col: [daily_max[col].iloc[-1]]}, index=[
                             daily_max.index[-1] + pd.Timedelta(days=1)])])
-                        print([index for index in daily_max.index])
                         self.master.chart_figure.add_trace(
                             go.Scatter(x=daily_max.index, y=daily_max[col], mode='lines',
                                        line=dict(dash='solid', width=1, color='red'), name=f'{col} max 1д ({device})'))
